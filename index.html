@@ -431,7 +431,6 @@
 </div>
 
 <script>
-/* Bundled LAME MP3 encoder (lamejs 1.2.1, pure JavaScript, MIT/LGPL) - embedded so MP3 export needs zero network requests */
 function lamejs(){function X(c){return new Int32Array(c)}function K(c){return new Float32Array(c)}function ca(c){if(1==c.length)return K(c[0]);var k=c[0];c=c.slice(1);for(var n=[],u=0;u<k;u++)n.push(ca(c));return n}function Ia(c){if(1==c.length)return X(c[0]);var k=c[0];c=c.slice(1);for(var n=[],u=0;u<k;u++)n.push(Ia(c));return n}function dc(c){if(1==c.length)return new Int16Array(c[0]);var k=c[0];c=c.slice(1);for(var n=[],u=0;u<k;u++)n.push(dc(c));return n}function Ob(c){if(1==c.length)return Array(c[0]);
 var k=c[0];c=c.slice(1);for(var n=[],u=0;u<k;u++)n.push(Ob(c));return n}function ra(c){this.ordinal=c}function G(c){this.ordinal=c}function la(c){this.ordinal=function(){return c}}function mc(){this.getLameVersion=function(){return"3.98.4"};this.getLameShortVersion=function(){return"3.98.4"};this.getLameVeryShortVersion=function(){return"LAME3.98r"};this.getPsyVersion=function(){return"0.93"};this.getLameUrl=function(){return"http://www.mp3dev.org/"};this.getLameOsBitness=function(){return"32bits"}}
 function Y(){function c(f,b,c,a,m,k){for(;0!=m--;)c[a]=1E-10+f[b+0]*k[0]-c[a-1]*k[1]+f[b-1]*k[2]-c[a-2]*k[3]+f[b-2]*k[4]-c[a-3]*k[5]+f[b-3]*k[6]-c[a-4]*k[7]+f[b-4]*k[8]-c[a-5]*k[9]+f[b-5]*k[10]-c[a-6]*k[11]+f[b-6]*k[12]-c[a-7]*k[13]+f[b-7]*k[14]-c[a-8]*k[15]+f[b-8]*k[16]-c[a-9]*k[17]+f[b-9]*k[18]-c[a-10]*k[19]+f[b-10]*k[20],++a,++b}function k(f,b,c,a,m,k){for(;0!=m--;)c[a]=f[b+0]*k[0]-c[a-1]*k[1]+f[b-1]*k[2]-c[a-2]*k[3]+f[b-2]*k[4],++a,++b}function n(f){return f*f}var V=Y.RMS_WINDOW_TIME_NUMERATOR,
@@ -739,7 +738,6 @@ ia.IXMAX_VAL=8206;var sa={};sa.SFBMAX=3*c.SBMAX_s;c.ENCDELAY=576;c.POSTDELAY=115
 4,!0);break;default:throw"extended fmt chunk not implemented";}w+=u;u=Fa.data;for(var B=0;u!=n;){n=c.getUint32(w,!1);B=c.getUint32(w+4,!0);if(u==n)break;w+=B+8}k.dataLen=B;k.dataOffset=w+8;return k}};sa.SFBMAX=3*c.SBMAX_s;lamejs.Mp3Encoder=function(c,k,n){3!=arguments.length&&(console.error("WARN: Mp3Encoder(channels, samplerate, kbps) not specified"),c=1,k=44100,n=128);var u=new W,w=new Kc,B=new Y,G=new qa,f=new wc,b=new ia,v=new Ec,a=new zb,m=new mc,z=new Nc,e=new xc,l=new qb,d=new Lc,g=new Mc;
 u.setModules(B,G,f,b,v,a,m,z,g);G.setModules(B,g,m,a);z.setModules(G,m);f.setModules(u);v.setModules(G,e,b,l);b.setModules(l,e,u.enc.psy);e.setModules(G);l.setModules(b);a.setModules(u,G,m);w.setModules(d,g);d.setModules(m,z,f);var q=u.lame_init();q.num_channels=c;q.in_samplerate=k;q.brate=n;q.mode=la.STEREO;q.quality=3;q.bWriteVbrTag=!1;q.disable_reservoir=!0;q.write_id3tag_automatic=!1;u.lame_init_params(q);var D=1152,p=0|1.25*D+7200,r=new Int8Array(p);this.encodeBuffer=function(a,b){1==c&&(b=a);
 a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buffer(q,a,b,a.length,r,0,p);return new Int8Array(r.subarray(0,a))};this.flush=function(){var a=u.lame_encode_flush(q,r,0,p);return new Int8Array(r.subarray(0,a))}};lamejs.WavHeader=Fa}lamejs();
-
 </script>
 <script>
 (function(){
@@ -788,17 +786,39 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const vizCtx = vizCanvas.getContext('2d');
   let originalUrl = null;
 
-  // ---- Web Audio graph for visualizer (created lazily on first play, per browser gesture rules)
-  let audioCtx = null, analyser = null, sourceNode = null, freqData = null, vizRAF = null;
-  function ensureAudioGraph(){
-    if(audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    sourceNode = audioCtx.createMediaElementSource(originalPlayer);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 128;
-    freqData = new Uint8Array(analyser.frequencyBinCount);
-    sourceNode.connect(analyser);
-    analyser.connect(audioCtx.destination);
+  // ============== WAVEFORM VISUALIZER (real peaks, played/unplayed split) ==============
+  let waveformPeaks = null; // Float32Array of per-column peak amplitudes (0..1)
+
+  async function decodeWaveformPeaks(file){
+    try{
+      const arrBuf = await file.arrayBuffer();
+      const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await tmpCtx.decodeAudioData(arrBuf.slice(0));
+      tmpCtx.close();
+      const ch0 = decoded.getChannelData(0);
+      const numBars = 220; // resolution of the waveform
+      const bucket = Math.max(1, Math.floor(ch0.length / numBars));
+      const peaks = new Float32Array(numBars);
+      for(let i=0;i<numBars;i++){
+        let max = 0;
+        const start = i*bucket;
+        const end = Math.min(ch0.length, start+bucket);
+        for(let j=start;j<end;j++){
+          const v = Math.abs(ch0[j]);
+          if(v>max) max = v;
+        }
+        peaks[i] = max;
+      }
+      let globalMax = 0;
+      for(let i=0;i<peaks.length;i++) if(peaks[i]>globalMax) globalMax = peaks[i];
+      if(globalMax > 0){ for(let i=0;i<peaks.length;i++) peaks[i] = peaks[i]/globalMax; }
+      waveformPeaks = peaks;
+      drawWaveform();
+    }catch(e){
+      console.error('Gagal decode waveform:', e);
+      waveformPeaks = null;
+      drawFlatViz();
+    }
   }
 
   function resizeViz(){
@@ -806,47 +826,70 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     vizCanvas.width = rect.width * devicePixelRatio;
     vizCanvas.height = 64 * devicePixelRatio;
   }
-  window.addEventListener('resize', resizeViz);
+  window.addEventListener('resize', ()=>{ resizeViz(); drawWaveform(); });
 
   function drawFlatViz(){
     resizeViz();
     const w = vizCanvas.width, h = vizCanvas.height;
     vizCtx.clearRect(0,0,w,h);
-    const bars = 48;
+    const barsCount = 48;
     const gap = w * 0.006;
-    const bw = (w - gap*(bars-1)) / bars;
-    for(let i=0;i<bars;i++){
+    const bw = (w - gap*(barsCount-1)) / barsCount;
+    for(let i=0;i<barsCount;i++){
       const bh = h * 0.05;
       vizCtx.fillStyle = '#2c2c2c';
       vizCtx.fillRect(i*(bw+gap), h - bh, bw, bh);
     }
   }
 
-  function drawViz(){
-    vizRAF = requestAnimationFrame(drawViz);
-    analyser.getByteFrequencyData(freqData);
+  function drawWaveform(){
+    if(!waveformPeaks){ drawFlatViz(); return; }
+    resizeViz();
     const w = vizCanvas.width, h = vizCanvas.height;
     vizCtx.clearRect(0,0,w,h);
-    const bars = 48;
-    const gap = w * 0.006;
-    const bw = (w - gap*(bars-1)) / bars;
-    const step = Math.floor(freqData.length / bars);
-    for(let i=0;i<bars;i++){
-      let sum = 0;
-      for(let j=0;j<step;j++) sum += freqData[i*step + j] || 0;
-      const v = sum / step / 255;
-      const bh = Math.max(h*0.05, v * h * 0.95);
-      const grey = Math.round(70 + v*140);
-      vizCtx.fillStyle = `rgb(${grey},${grey},${grey})`;
-      vizCtx.fillRect(i*(bw+gap), h - bh, bw, bh);
+
+    const barsCount = waveformPeaks.length;
+    const gap = w * 0.0025;
+    const bw = (w - gap*(barsCount-1)) / barsCount;
+
+    const dur = originalPlayer.duration || 0;
+    const cur = originalPlayer.currentTime || 0;
+    const playedRatio = dur > 0 ? Math.min(1, cur / dur) : 0;
+    const playedBars = Math.floor(playedRatio * barsCount);
+
+    const grad = vizCtx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#8fd694');
+    grad.addColorStop(1, '#5b8fe0');
+
+    for(let i=0;i<barsCount;i++){
+      const amp = Math.max(0.04, waveformPeaks[i]); // minimum visible height
+      const bh = amp * h * 0.92;
+      const x = i*(bw+gap);
+      const y = (h - bh) / 2;
+      vizCtx.fillStyle = i < playedBars ? grad : '#2b2f27';
+      vizCtx.fillRect(x, y, bw, bh);
     }
   }
-  function stopViz(){
-    if(vizRAF) cancelAnimationFrame(vizRAF);
-    vizRAF = null;
-    drawFlatViz();
+
+  // click / drag on the waveform to seek
+  let vizDragging = false;
+  function seekFromEvent(e){
+    if(!originalPlayer.duration) return;
+    const rect = vizCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    originalPlayer.currentTime = ratio * originalPlayer.duration;
+    drawWaveform();
   }
+  vizCanvas.style.cursor = 'pointer';
+  vizCanvas.addEventListener('mousedown', e=>{ vizDragging = true; seekFromEvent(e); });
+  window.addEventListener('mousemove', e=>{ if(vizDragging) seekFromEvent(e); });
+  window.addEventListener('mouseup', ()=>{ vizDragging = false; });
+  vizCanvas.addEventListener('touchstart', seekFromEvent);
+  vizCanvas.addEventListener('touchmove', seekFromEvent);
+
   drawFlatViz();
+  // ============== END WAVEFORM VISUALIZER ==============
 
   function fmtTime(s){
     if(!isFinite(s)) return '0:00';
@@ -855,10 +898,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     return `${m}:${sec}`;
   }
 
-  opPlay.addEventListener('click', async ()=>{
+  opPlay.addEventListener('click', ()=>{
     if(!originalPlayer.src) return;
-    ensureAudioGraph();
-    if(audioCtx.state === 'suspended') await audioCtx.resume();
     if(originalPlayer.paused){
       originalPlayer.play();
     }else{
@@ -869,34 +910,34 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     opPlayIcon.style.display = 'none';
     opPauseIcon.style.display = '';
     opLive.classList.add('active');
-    drawViz();
   });
   originalPlayer.addEventListener('pause', ()=>{
     opPlayIcon.style.display = '';
     opPauseIcon.style.display = 'none';
     opLive.classList.remove('active');
-    stopViz();
   });
   originalPlayer.addEventListener('ended', ()=>{
     opPlayIcon.style.display = '';
     opPauseIcon.style.display = 'none';
     opLive.classList.remove('active');
-    stopViz();
   });
   originalPlayer.addEventListener('loadedmetadata', ()=>{
     opDur.textContent = fmtTime(originalPlayer.duration);
     opSeek.value = 0;
     applyLiveRate();
+    drawWaveform();
   });
   originalPlayer.addEventListener('timeupdate', ()=>{
     if(originalPlayer.duration){
       opSeek.value = (originalPlayer.currentTime / originalPlayer.duration) * 100;
     }
     opCur.textContent = fmtTime(originalPlayer.currentTime);
+    drawWaveform();
   });
   opSeek.addEventListener('input', ()=>{
     if(originalPlayer.duration){
       originalPlayer.currentTime = (opSeek.value/100) * originalPlayer.duration;
+      drawWaveform();
     }
   });
 
@@ -1376,7 +1417,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     opPlayIcon.style.display = '';
     opPauseIcon.style.display = 'none';
     opLive.classList.remove('active');
-    stopViz();
+
+    waveformPeaks = null;
+    drawFlatViz();
+    decodeWaveformPeaks(file);
 
     deck.scrollIntoView({behavior:'smooth', block:'start'});
   }
@@ -1411,7 +1455,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     opPlayIcon.style.display = '';
     opPauseIcon.style.display = 'none';
     opLive.classList.remove('active');
-    stopViz();
+    waveformPeaks = null;
+    drawFlatViz();
   });
 
   processBtn.addEventListener('click', async ()=>{
@@ -1519,6 +1564,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     }
   });
 })();
+
 </script>
 </body>
 </html>
