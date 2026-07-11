@@ -388,6 +388,11 @@
         </select>
       </div>
       <div class="ctrl full">
+        <div class="ctrl-label"><span>Judul / Title (metadata file)</span></div>
+        <input type="text" id="metaTitle" placeholder="mis. SRZ Studio" value="SRZ Studio">
+        <div class="op-hint" style="margin-top:8px;">Ditanam sebagai tag judul asli di file (bukan cuma nama file) &mdash; didukung untuk MP3 &amp; WAV. Belum bisa untuk OGG/WebM.</div>
+      </div>
+      <div class="ctrl full">
         <div class="ctrl-label"><span>Potong Durasi (opsional)</span><button class="reset-link" id="resetTrim">reset</button></div>
         <div class="trim-row">
           <div>
@@ -935,6 +940,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const trimStart = document.getElementById('trimStart');
   const trimDur = document.getElementById('trimDur');
   const resetTrim = document.getElementById('resetTrim');
+  const metaTitle = document.getElementById('metaTitle');
   const presetBtns = document.querySelectorAll('.preset-btn');
 
   const PRESETS = {
@@ -1077,20 +1083,91 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     return shifted;
   }
 
-  function encodeWAV(channels, sampleRate){
+  // ---- Shared helper: write an ASCII string into a Uint8Array at a byte offset
+  function writeAsciiInto(u8, offset, str){
+    for(let i=0;i<str.length;i++) u8[offset+i] = str.charCodeAt(i) & 0xFF;
+  }
+
+  // ---- ID3v2.3 tag builder (embeds a real "Title"/"Artist" that music apps read) ----
+  function buildID3v2Tag(title){
+    const text = (title || '').slice(0, 200);
+    function textFrame(id, value){
+      const strBytes = new TextEncoder().encode(value);
+      const content = new Uint8Array(1 + strBytes.length); // 1 byte = text encoding flag (0x00 = ISO-8859-1/UTF-8 subset)
+      content[0] = 0x00;
+      content.set(strBytes, 1);
+      const frame = new Uint8Array(10 + content.length);
+      writeAsciiInto(frame, 0, id);
+      const size = content.length;
+      frame[4] = (size >>> 24) & 0xFF; frame[5] = (size >>> 16) & 0xFF;
+      frame[6] = (size >>> 8) & 0xFF;  frame[7] = size & 0xFF;
+      frame[8] = 0; frame[9] = 0; // frame flags
+      frame.set(content, 10);
+      return frame;
+    }
+    const titleFrame = textFrame('TIT2', text);
+    const artistFrame = textFrame('TPE1', text);
+    const framesLen = titleFrame.length + artistFrame.length;
+    const header = new Uint8Array(10);
+    writeAsciiInto(header, 0, 'ID3');
+    header[3] = 3; header[4] = 0; header[5] = 0; // v2.3.0, no flags
+    header[6] = (framesLen >>> 21) & 0x7F; header[7] = (framesLen >>> 14) & 0x7F;
+    header[8] = (framesLen >>> 7) & 0x7F;  header[9] = framesLen & 0x7F; // synchsafe size
+    const tag = new Uint8Array(10 + framesLen);
+    tag.set(header, 0);
+    tag.set(titleFrame, 10);
+    tag.set(artistFrame, 10 + titleFrame.length);
+    return tag;
+  }
+
+  // ---- RIFF "LIST/INFO" chunk builder (WAV's native title/artist tag) ----
+  function buildWavInfoChunk(title){
+    const text = (title || '').slice(0, 200);
+    function subchunk(id, value){
+      let data = new TextEncoder().encode(value + '\0');
+      if(data.length % 2 !== 0){ const p = new Uint8Array(data.length+1); p.set(data,0); data = p; }
+      const chunk = new Uint8Array(8 + data.length);
+      writeAsciiInto(chunk, 0, id);
+      new DataView(chunk.buffer).setUint32(4, data.length, true);
+      chunk.set(data, 8);
+      return chunk;
+    }
+    const inam = subchunk('INAM', text); // title
+    const iart = subchunk('IART', text); // artist
+    const infoBody = new Uint8Array(4 + inam.length + iart.length);
+    writeAsciiInto(infoBody, 0, 'INFO');
+    infoBody.set(inam, 4);
+    infoBody.set(iart, 4 + inam.length);
+    const listChunk = new Uint8Array(8 + infoBody.length);
+    writeAsciiInto(listChunk, 0, 'LIST');
+    new DataView(listChunk.buffer).setUint32(4, infoBody.length, true);
+    listChunk.set(infoBody, 8);
+    return listChunk;
+  }
+
+  function encodeWAV(channels, sampleRate, title){
     const numChannels = channels.length;
     const numFrames = channels[0].length;
     const blockAlign = numChannels * 2;
     const dataSize = numFrames * blockAlign;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-    function writeStr(offset, str){ for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); }
-    writeStr(0,'RIFF'); view.setUint32(4, 36+dataSize, true); writeStr(8,'WAVE');
-    writeStr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
-    view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
-    view.setUint32(28, sampleRate*blockAlign, true); view.setUint16(32,blockAlign,true);
-    view.setUint16(34,16,true); writeStr(36,'data'); view.setUint32(40,dataSize,true);
-    let offset = 44;
+    const listChunk = title ? buildWavInfoChunk(title) : new Uint8Array(0);
+    const riffSize = 36 + listChunk.length + dataSize;
+
+    const header = new Uint8Array(36);
+    const hv = new DataView(header.buffer);
+    writeAsciiInto(header, 0, 'RIFF'); hv.setUint32(4, riffSize, true); writeAsciiInto(header, 8, 'WAVE');
+    writeAsciiInto(header, 12, 'fmt '); hv.setUint32(16, 16, true); hv.setUint16(20, 1, true);
+    hv.setUint16(22, numChannels, true); hv.setUint32(24, sampleRate, true);
+    hv.setUint32(28, sampleRate*blockAlign, true); hv.setUint16(32, blockAlign, true);
+    hv.setUint16(34, 16, true);
+
+    const dataHeader = new Uint8Array(8);
+    writeAsciiInto(dataHeader, 0, 'data');
+    new DataView(dataHeader.buffer).setUint32(4, dataSize, true);
+
+    const pcm = new ArrayBuffer(dataSize);
+    const view = new DataView(pcm);
+    let offset = 0;
     for(let i=0;i<numFrames;i++){
       for(let c=0;c<numChannels;c++){
         const s = Math.max(-1, Math.min(1, channels[c][i] || 0));
@@ -1098,7 +1175,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         offset += 2;
       }
     }
-    return new Blob([view], { type:'audio/wav' });
+    return new Blob([header, listChunk, dataHeader, pcm], { type:'audio/wav' });
   }
 
   async function processAudioNoEngine(file, opts, onProgress){
@@ -1146,11 +1223,12 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
 
   // ---- MP3 encoding using the bundled pure-JS LAME encoder (no download) ----
-  function encodeMP3(channels, sampleRate, kbps){
+  function encodeMP3(channels, sampleRate, kbps, title){
     kbps = kbps || 128;
     const numCh = Math.min(2, channels.length);
     const encoder = new lamejs.Mp3Encoder(numCh, sampleRate, kbps);
     const chunks = [];
+    if(title){ chunks.push(buildID3v2Tag(title)); }
     const blockSize = 1152;
     const len = channels[0].length;
 
@@ -1360,8 +1438,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       });
 
       let blob, actualExt = outFmt;
+      const titleMeta = metaTitle.value.trim();
       if(outFmt === 'mp3'){
-        blob = encodeMP3(channels, sampleRate, 128);
+        blob = encodeMP3(channels, sampleRate, 128, titleMeta);
         progressFill.style.width = '99%'; progressLabel.textContent = '99%';
       } else if(outFmt === 'ogg'){
         btnText.textContent = 'Merekam OGG (real-time)...';
@@ -1373,7 +1452,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         blob = res.blob;
         actualExt = res.ext; // may fall back to 'webm' if the browser has no true Ogg muxer
       } else {
-        blob = encodeWAV(channels, sampleRate);
+        blob = encodeWAV(channels, sampleRate, titleMeta);
         progressFill.style.width = '99%'; progressLabel.textContent = '99%';
       }
 
@@ -1381,7 +1460,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
 
       if(processedBlobUrl) URL.revokeObjectURL(processedBlobUrl);
       processedBlobUrl = url;
-      processedFilename = currentFile.name.replace(/\.[^.]+$/, '') + '_processed.' + actualExt;
+      const baseName = currentFile.name.replace(/\.[^.]+$/, '');
+      const safeTitle = titleMeta ? titleMeta.replace(/[\\/:*?"<>|]/g, '').trim() : '';
+      processedFilename = (safeTitle ? safeTitle + ' - ' : '') + baseName + '_processed.' + actualExt;
 
       preview.src = url;
       resultMeta.textContent = fmtBytes(blob.size) + ' · ' + actualExt.toUpperCase() +
