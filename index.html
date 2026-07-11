@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REEL &mdash; Audio Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0b0d0b;
+    --bg-2: #10130f;
+    --panel: #14180f;
+    --line: #262b21;
+    --line-soft: #1c2018;
+    --amber: #e8a33d;
+    --amber-dim: #8a651f;
+    --phosphor: #8fd694;
+    --phosphor-dim: #3f5e42;
+    --text: #eae7dd;
+    --text-dim: #8b8f83;
+    --danger: #d16a5a;
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(232,163,61,0.06), transparent 50%),
+      radial-gradient(ellipse at 90% 110%, rgba(143,214,148,0.05), transparent 50%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+    padding: 28px 20px 60px;
+  }
+  .wrap{ max-width: 880px; margin: 0 auto; }
+
+  /* header */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom: 22px; margin-bottom: 26px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .reel-icon{ width:34px; height:34px; flex-shrink:0; }
+  .brand-text{ font-family:'IBM Plex Mono', monospace; }
+  .brand-text .name{ font-size:19px; font-weight:700; letter-spacing:1px; }
+  .brand-text .name span{ color:var(--amber); }
+  .brand-text .tag{ font-size:10px; letter-spacing:3px; color:var(--text-dim); margin-top:2px;}
+  .status{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:1px;
+    color:var(--phosphor); display:flex; align-items:center; gap:7px;
+    border:1px solid var(--phosphor-dim); padding:6px 10px; border-radius:var(--radius);
+    background: rgba(143,214,148,0.04); cursor:pointer;
+  }
+  .status .dot{ width:6px; height:6px; border-radius:50%; background:var(--phosphor); box-shadow:0 0 6px var(--phosphor); }
+
+  h1.hero{
+    font-size: clamp(28px, 4.2vw, 40px);
+    line-height:1.15; margin: 0 0 8px; font-weight:600;
+  }
+  h1.hero .accent{ color:var(--amber); font-style:italic; font-family:'IBM Plex Mono',monospace; font-weight:600;}
+  p.sub{ color:var(--text-dim); font-size:14.5px; margin:0 0 30px; max-width:520px; line-height:1.55;}
+  p.sub b{ color: var(--text); font-weight:600; }
+
+  .note{
+    font-size:12px; color:var(--text-dim); border:1px dashed var(--line);
+    border-radius:var(--radius); padding:10px 14px; margin-bottom:28px; line-height:1.6;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .note b{ color:var(--amber); }
+
+  /* dropzone */
+  .dropzone{
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 40px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+    position:relative;
+    overflow:hidden;
+  }
+  .dropzone.drag{ border-color: var(--amber); background: rgba(232,163,61,0.05); }
+  .dropzone input{ display:none; }
+  .dz-title{ font-weight:600; font-size:16px; margin: 14px 0 6px; }
+  .dz-sub{ color:var(--text-dim); font-size:12.5px; font-family:'IBM Plex Mono',monospace; }
+
+  /* vu meter signature element */
+  .vu{ display:flex; justify-content:center; align-items:flex-end; gap:4px; height:44px; margin-bottom:2px; }
+  .vu i{
+    display:block; width:5px; border-radius:1px;
+    background: linear-gradient(to top, var(--phosphor-dim), var(--phosphor));
+    height: 6px;
+    transition: height .12s ease;
+  }
+
+  /* deck (loaded file panel) */
+  .deck{ display:none; }
+  .deck.show{ display:block; }
+  .file-row{
+    display:flex; align-items:center; justify-content:space-between;
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 16px; margin-bottom:22px; background: var(--panel);
+  }
+  .file-row .fname{ font-family:'IBM Plex Mono',monospace; font-size:13px; }
+  .file-row .fmeta{ font-size:11px; color:var(--text-dim); margin-top:4px; }
+  .file-row .clear{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--danger);
+    background:none; border:1px solid var(--danger); border-radius:var(--radius);
+    padding:5px 10px; cursor:pointer; letter-spacing:1px;
+  }
+  .file-row .clear:hover{ background: rgba(209,106,90,0.1); }
+
+  .original-preview{
+    border:1px solid #2b2b2b; border-radius:var(--radius);
+    background: linear-gradient(180deg, #1c1c1c, #141414);
+    padding:16px 18px 14px; margin-bottom:22px;
+  }
+  .op-label{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:1px;
+    color:#9a9a9a; text-transform:uppercase; margin-bottom:12px;
+  }
+  .op-live{
+    font-size:9.5px; color:#6b6b6b; border:1px solid #3a3a3a; border-radius:2px;
+    padding:2px 6px; letter-spacing:1.5px;
+  }
+  .op-live.active{ color:#c9c9c9; border-color:#5a5a5a; }
+  .op-live.active::before{ content:'● '; color:#8fd694; }
+
+  .viz{
+    display:block; width:100%; height:64px; background:#0f0f0f;
+    border:1px solid #262626; border-radius:2px; margin-bottom:14px;
+  }
+
+  .op-transport{ display:flex; align-items:center; gap:12px; }
+  .op-play{
+    flex-shrink:0; width:34px; height:34px; border-radius:50%;
+    background: #2a2a2a; border:1px solid #3d3d3d; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: background .15s ease;
+  }
+  .op-play:hover{ background:#333; }
+  .op-time{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a8a8a; width:36px; flex-shrink:0; }
+  .op-time:last-child{ text-align:right; }
+  .op-seek{ flex:1; }
+  input.op-seek::-webkit-slider-thumb{ background:#c9c9c9; box-shadow:0 0 0 1px #c9c9c9; }
+  input.op-seek::-moz-range-thumb{ background:#c9c9c9; }
+  .op-hint{
+    font-size:10.5px; color:#6b6b6b; margin-top:10px; line-height:1.5;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .op-hint b{ color:#a8a8a8; }
+
+  .presets{ margin-bottom: 22px; }
+  .presets-label{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:1px;
+    color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;
+  }
+  .presets-row{ display:flex; flex-wrap:wrap; gap:10px; }
+  .preset-btn{
+    background: var(--bg-2); border:1px solid var(--line); border-radius:var(--radius);
+    padding:9px 14px; cursor:pointer; text-align:left; flex:1; min-width:118px;
+    display:flex; flex-direction:column; gap:3px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .preset-btn:hover{ border-color: var(--amber); background: rgba(232,163,61,0.06); }
+  .preset-btn.active{ border-color: var(--amber); background: rgba(232,163,61,0.1); }
+  .preset-btn .pn{
+    font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px;
+    color: var(--text); letter-spacing:0.5px;
+  }
+  .preset-btn .pd{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-dim); }
+  .preset-btn.preset-reset{ border-style:dashed; }
+  .preset-btn.preset-reset:hover{ border-color: var(--phosphor); background: rgba(143,214,148,0.06); }
+
+  .controls{
+    display:grid; grid-template-columns: 1fr 1fr; gap: 16px 22px;
+    margin-bottom: 24px;
+  }
+  .ctrl{
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; background: var(--bg-2);
+  }
+  .ctrl.full{ grid-column: 1 / -1; }
+  .ctrl-label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:1px;
+    color: var(--text-dim); text-transform:uppercase; margin-bottom:12px;
+  }
+  .ctrl-label .val{ color: var(--amber); font-size:13px; letter-spacing:0; }
+  input[type=range]{
+    -webkit-appearance:none; width:100%; height:3px; background: var(--line);
+    border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background: var(--amber); cursor:pointer; border:2px solid var(--bg-2);
+    box-shadow: 0 0 0 1px var(--amber);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background: var(--amber); cursor:pointer; border:2px solid var(--bg-2);
+  }
+  .ctrl-ticks{ display:flex; justify-content:space-between; font-size:9.5px; color:var(--line); margin-top:6px; font-family:'IBM Plex Mono',monospace;}
+
+  select, .trim-row input[type=text]{
+    width:100%; background: var(--panel); border:1px solid var(--line);
+    color: var(--text); font-family:'IBM Plex Mono',monospace; font-size:12.5px;
+    padding:9px 10px; border-radius:var(--radius); outline:none;
+  }
+  select:focus, .trim-row input:focus{ border-color: var(--amber); }
+  .trim-row{ display:flex; gap:10px; }
+  .trim-row > div{ flex:1; }
+  .trim-row label{ font-size:10px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; display:block; margin-bottom:5px;}
+
+  .reset-link{
+    background:none; border:none; color:var(--text-dim); font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px; text-decoration:underline; cursor:pointer; padding:0;
+  }
+  .reset-link:hover{ color: var(--amber); }
+
+  .run-row{ display:flex; align-items:center; gap:16px; margin-top: 6px; }
+  button.process{
+    font-family:'IBM Plex Mono',monospace; font-weight:600; letter-spacing:1px;
+    background: var(--amber); color: #1a1508; border:none; border-radius:var(--radius);
+    padding: 14px 26px; font-size:13px; cursor:pointer; text-transform:uppercase;
+    display:flex; align-items:center; gap:10px;
+    transition: transform .1s ease, box-shadow .15s ease;
+  }
+  button.process:hover:not(:disabled){ box-shadow: 0 0 0 1px var(--amber), 0 0 18px rgba(232,163,61,0.25); }
+  button.process:disabled{ opacity:0.45; cursor:not-allowed; }
+  button.process.not-ready{ opacity:0.55; }
+  button.process.done{ background: var(--phosphor); }
+  button.process.done:hover:not(:disabled){ box-shadow: 0 0 0 1px var(--phosphor), 0 0 18px rgba(143,214,148,0.3); }
+  .reel-spin{ width:16px; height:16px; display:none; }
+  button.process.working .reel-spin{ display:inline-block; animation: spin 0.9s linear infinite; }
+  button.process.working .play-tri{ display:none; }
+  button.process.done .play-tri{ display:none; }
+  button.process.done .dl-icon{ display:inline-block !important; }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  .progress-track{ flex:1; height:3px; background:var(--line); border-radius:2px; overflow:hidden; display:none;}
+  .progress-track.show{ display:block; }
+  .progress-fill{ height:100%; width:0%; background: var(--phosphor); transition: width .2s ease; }
+  .progress-label{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-dim); display:none;}
+  .progress-label.show{ display:block; }
+
+  .result{ margin-top:26px; display:none; }
+  .result.show{ display:block; }
+  .result-box{
+    border:1px solid var(--phosphor-dim); border-radius:var(--radius);
+    background: rgba(143,214,148,0.04); padding:18px 20px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+  }
+  .result-box .rt{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--phosphor); }
+  .result-box .rs{ font-size:11px; color:var(--text-dim); margin-top:4px; }
+  a.download{
+    font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px; letter-spacing:1px;
+    background:var(--phosphor); color:#0d1a0e; padding:11px 20px; border-radius:var(--radius);
+    text-decoration:none; text-transform:uppercase;
+  }
+  audio{ width:100%; margin-top:14px; }
+
+  .err{ display:none; margin-top:16px; border:1px solid var(--danger); color:var(--danger);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:12px 16px; border-radius:var(--radius);
+    background: rgba(209,106,90,0.06); white-space:pre-wrap; line-height:1.6; }
+  .err.show{ display:block; }
+
+  footer{ text-align:center; margin-top:50px; font-size:11px; color:var(--line); font-family:'IBM Plex Mono',monospace; }
+
+  @media (max-width:560px){
+    .controls{ grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <svg class="reel-icon" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="21" stroke="#e8a33d" stroke-width="2"/>
+        <circle cx="24" cy="24" r="4" fill="#e8a33d"/>
+        <circle cx="24" cy="10" r="3.2" stroke="#8fd694" stroke-width="1.6"/>
+        <circle cx="36.5" cy="30" r="3.2" stroke="#8fd694" stroke-width="1.6"/>
+        <circle cx="11.5" cy="30" r="3.2" stroke="#8fd694" stroke-width="1.6"/>
+      </svg>
+      <div class="brand-text">
+        <div class="name">REEL<span>.</span>DECK</div>
+        <div class="tag">LOCAL AUDIO STUDIO</div>
+      </div>
+    </div>
+    <div class="status" id="statusPill" title="Klik untuk coba lagi kalau error"><span class="dot"></span><span id="statusText">LOADING ENGINE</span></div>
+  </header>
+
+  <h1 class="hero">Ubah pitch &amp; speed<br><span class="accent">tanpa upload kemana-mana.</span></h1>
+  <p class="sub">Semua proses jalan <b>di browser kamu sendiri</b> pakai FFmpeg (WebAssembly). File audio tidak pernah dikirim ke server manapun &mdash; cocok untuk file pribadi.</p>
+
+  <div class="note"><b>CATATAN:</b> Proses pertama kali perlu mengunduh engine FFmpeg (&sim;25MB) dari CDN, sekali saja per sesi. Setelah itu semua konversi berjalan lokal di perangkatmu.</div>
+
+  <div class="dropzone" id="dropzone">
+    <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a" />
+    <div class="vu" id="vu"></div>
+    <div class="dz-title">Taruh file audio di sini, atau klik untuk pilih</div>
+    <div class="dz-sub">MP3, WAV, OGG, FLAC, M4A</div>
+  </div>
+
+  <div class="err" id="errBox"></div>
+
+  <div class="deck" id="deck">
+    <div class="file-row">
+      <div>
+        <div class="fname" id="fName">-</div>
+        <div class="fmeta" id="fMeta">-</div>
+      </div>
+      <button class="clear" id="clearBtn">HAPUS</button>
+    </div>
+
+    <div class="original-preview">
+      <div class="op-label">
+        <span>Dengarkan &amp; uji suara</span>
+        <span class="op-live" id="opLive">LIVE PREVIEW</span>
+      </div>
+
+      <canvas id="viz" class="viz" height="64"></canvas>
+
+      <div class="op-transport">
+        <button class="op-play" id="opPlay" aria-label="Play">
+          <svg id="opPlayIcon" width="14" height="14" viewBox="0 0 12 12"><path d="M2 1 L11 6 L2 11 Z" fill="#dcdcdc"/></svg>
+          <svg id="opPauseIcon" width="14" height="14" viewBox="0 0 12 12" style="display:none"><rect x="1.5" y="1" width="3" height="10" fill="#dcdcdc"/><rect x="7.5" y="1" width="3" height="10" fill="#dcdcdc"/></svg>
+        </button>
+        <span class="op-time" id="opCur">0:00</span>
+        <input type="range" id="opSeek" class="op-seek" min="0" max="100" step="0.1" value="0">
+        <span class="op-time" id="opDur">0:00</span>
+      </div>
+      <div class="op-hint">Geser slider <b>Pitch</b> / <b>Speed</b> di bawah sambil musik diputar &mdash; suaranya langsung berubah.</div>
+      <audio id="originalPlayer" style="display:none" preload="metadata"></audio>
+    </div>
+
+    <div class="presets">
+      <div class="presets-label">Preset Cepat</div>
+      <div class="presets-row">
+        <button class="preset-btn" data-preset="nightcore">
+          <span class="pn">Nightcore</span><span class="pd">+5st &middot; 1.25x</span>
+        </button>
+        <button class="preset-btn" data-preset="chipmunk">
+          <span class="pn">Chipmunk</span><span class="pd">+8st &middot; 1.20x</span>
+        </button>
+        <button class="preset-btn" data-preset="deep">
+          <span class="pn">Deep</span><span class="pd">-6st &middot; 0.90x</span>
+        </button>
+        <button class="preset-btn" data-preset="slowed">
+          <span class="pn">Slowed</span><span class="pd">-3st &middot; 0.80x</span>
+        </button>
+        <button class="preset-btn preset-reset" data-preset="reset">
+          <span class="pn">Normal</span><span class="pd">reset semua</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="ctrl">
+        <div class="ctrl-label"><span>Pitch</span><span class="val" id="pitchVal">0 st</span></div>
+        <input type="range" id="pitch" min="-12" max="12" step="1" value="0">
+        <div class="ctrl-ticks"><span>-12</span><span>0</span><span>+12</span></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-label"><span>Speed</span><span class="val" id="speedVal">1.00x</span></div>
+        <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
+        <div class="ctrl-ticks"><span>0.5x</span><span>1x</span><span>2x</span></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-label"><span>Volume</span><span class="val" id="volVal">100%</span></div>
+        <input type="range" id="vol" min="0" max="200" step="5" value="100">
+        <div class="ctrl-ticks"><span>0%</span><span>100%</span><span>200%</span></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-label"><span>Format Output</span></div>
+        <select id="format">
+          <option value="mp3">MP3</option>
+          <option value="wav">WAV</option>
+          <option value="ogg">OGG</option>
+        </select>
+      </div>
+      <div class="ctrl full">
+        <div class="ctrl-label"><span>Potong Durasi (opsional)</span><button class="reset-link" id="resetTrim">reset</button></div>
+        <div class="trim-row">
+          <div>
+            <label>MULAI (detik)</label>
+            <input type="text" id="trimStart" placeholder="0">
+          </div>
+          <div>
+            <label>DURASI (detik, kosongkan = sampai akhir)</label>
+            <input type="text" id="trimDur" placeholder="">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="run-row">
+      <button class="process not-ready" id="processBtn">
+        <svg class="reel-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#1a1508" stroke-width="2.5" stroke-dasharray="40" stroke-linecap="round"/></svg>
+        <svg class="play-tri" width="12" height="12" viewBox="0 0 12 12"><path d="M2 1 L11 6 L2 11 Z" fill="#1a1508"/></svg>
+        <svg class="dl-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" style="display:none">
+          <path d="M7 1 V9 M3.5 6 L7 9.5 L10.5 6" stroke="#0d1a0e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M1.5 11.5 H12.5 V13 H1.5 Z" fill="#0d1a0e"/>
+        </svg>
+        <span id="btnText">Proses Audio</span>
+      </button>
+      <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">0%</div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-box">
+        <div>
+          <div class="rt">Selesai diproses</div>
+          <div class="rs" id="resultMeta">-</div>
+        </div>
+      </div>
+      <audio id="preview" controls></audio>
+    </div>
+  </div>
+
+  <footer>REEL.DECK &mdash; diproses lokal di browser, tidak ada file yang diunggah</footer>
+</div>
+
+<script>
+(function(){
+  const vu = document.getElementById('vu');
+  for(let i=0;i<24;i++){ const b=document.createElement('i'); vu.appendChild(b); }
+  const bars = vu.querySelectorAll('i');
+  let vuAnim = null;
+  function startVU(){
+    if(vuAnim) return;
+    vuAnim = setInterval(()=>{
+      bars.forEach(b=>{ b.style.height = (6 + Math.random()*38) + 'px'; });
+    }, 110);
+  }
+  function stopVU(){
+    clearInterval(vuAnim); vuAnim = null;
+    bars.forEach(b=>{ b.style.height='6px'; });
+  }
+  startVU();
+
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const deck = document.getElementById('deck');
+  const fName = document.getElementById('fName');
+  const fMeta = document.getElementById('fMeta');
+  const clearBtn = document.getElementById('clearBtn');
+  const processBtn = document.getElementById('processBtn');
+  const btnText = document.getElementById('btnText');
+  const errBox = document.getElementById('errBox');
+  const progressTrack = document.getElementById('progressTrack');
+  const progressFill = document.getElementById('progressFill');
+  const progressLabel = document.getElementById('progressLabel');
+  const result = document.getElementById('result');
+  const resultMeta = document.getElementById('resultMeta');
+  const preview = document.getElementById('preview');
+  const originalPlayer = document.getElementById('originalPlayer');
+  const opPlay = document.getElementById('opPlay');
+  const opPlayIcon = document.getElementById('opPlayIcon');
+  const opPauseIcon = document.getElementById('opPauseIcon');
+  const opSeek = document.getElementById('opSeek');
+  const opCur = document.getElementById('opCur');
+  const opDur = document.getElementById('opDur');
+  const opLive = document.getElementById('opLive');
+  const vizCanvas = document.getElementById('viz');
+  const vizCtx = vizCanvas.getContext('2d');
+  let originalUrl = null;
+
+  // ---- Web Audio graph for visualizer (created lazily on first play, per browser gesture rules)
+  let audioCtx = null, analyser = null, sourceNode = null, freqData = null, vizRAF = null;
+  function ensureAudioGraph(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sourceNode = audioCtx.createMediaElementSource(originalPlayer);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    sourceNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  }
+
+  function resizeViz(){
+    const rect = vizCanvas.getBoundingClientRect();
+    vizCanvas.width = rect.width * devicePixelRatio;
+    vizCanvas.height = 64 * devicePixelRatio;
+  }
+  window.addEventListener('resize', resizeViz);
+
+  function drawFlatViz(){
+    resizeViz();
+    const w = vizCanvas.width, h = vizCanvas.height;
+    vizCtx.clearRect(0,0,w,h);
+    const bars = 48;
+    const gap = w * 0.006;
+    const bw = (w - gap*(bars-1)) / bars;
+    for(let i=0;i<bars;i++){
+      const bh = h * 0.05;
+      vizCtx.fillStyle = '#2c2c2c';
+      vizCtx.fillRect(i*(bw+gap), h - bh, bw, bh);
+    }
+  }
+
+  function drawViz(){
+    vizRAF = requestAnimationFrame(drawViz);
+    analyser.getByteFrequencyData(freqData);
+    const w = vizCanvas.width, h = vizCanvas.height;
+    vizCtx.clearRect(0,0,w,h);
+    const bars = 48;
+    const gap = w * 0.006;
+    const bw = (w - gap*(bars-1)) / bars;
+    const step = Math.floor(freqData.length / bars);
+    for(let i=0;i<bars;i++){
+      let sum = 0;
+      for(let j=0;j<step;j++) sum += freqData[i*step + j] || 0;
+      const v = sum / step / 255;
+      const bh = Math.max(h*0.05, v * h * 0.95);
+      const grey = Math.round(70 + v*140);
+      vizCtx.fillStyle = `rgb(${grey},${grey},${grey})`;
+      vizCtx.fillRect(i*(bw+gap), h - bh, bw, bh);
+    }
+  }
+  function stopViz(){
+    if(vizRAF) cancelAnimationFrame(vizRAF);
+    vizRAF = null;
+    drawFlatViz();
+  }
+  drawFlatViz();
+
+  function fmtTime(s){
+    if(!isFinite(s)) return '0:00';
+    const m = Math.floor(s/60);
+    const sec = Math.floor(s%60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+
+  opPlay.addEventListener('click', async ()=>{
+    if(!originalPlayer.src) return;
+    ensureAudioGraph();
+    if(audioCtx.state === 'suspended') await audioCtx.resume();
+    if(originalPlayer.paused){
+      originalPlayer.play();
+    }else{
+      originalPlayer.pause();
+    }
+  });
+  originalPlayer.addEventListener('play', ()=>{
+    opPlayIcon.style.display = 'none';
+    opPauseIcon.style.display = '';
+    opLive.classList.add('active');
+    drawViz();
+  });
+  originalPlayer.addEventListener('pause', ()=>{
+    opPlayIcon.style.display = '';
+    opPauseIcon.style.display = 'none';
+    opLive.classList.remove('active');
+    stopViz();
+  });
+  originalPlayer.addEventListener('ended', ()=>{
+    opPlayIcon.style.display = '';
+    opPauseIcon.style.display = 'none';
+    opLive.classList.remove('active');
+    stopViz();
+  });
+  originalPlayer.addEventListener('loadedmetadata', ()=>{
+    opDur.textContent = fmtTime(originalPlayer.duration);
+    opSeek.value = 0;
+    applyLiveRate();
+  });
+  originalPlayer.addEventListener('timeupdate', ()=>{
+    if(originalPlayer.duration){
+      opSeek.value = (originalPlayer.currentTime / originalPlayer.duration) * 100;
+    }
+    opCur.textContent = fmtTime(originalPlayer.currentTime);
+  });
+  opSeek.addEventListener('input', ()=>{
+    if(originalPlayer.duration){
+      originalPlayer.currentTime = (opSeek.value/100) * originalPlayer.duration;
+    }
+  });
+
+  // ---- Live speed & pitch preview: updates instantly, even mid-playback
+  function applyLiveRate(){
+    if(!originalPlayer.src) return;
+    const semis = parseFloat(pitch.value);
+    const speedFactor = parseFloat(speed.value);
+    const pitchFactor = Math.pow(2, semis/12);
+    try{
+      if(semis === 0){
+        // pure speed change: browser preserves pitch natively
+        originalPlayer.preservesPitch = true;
+        originalPlayer.mozPreservesPitch = true;
+        originalPlayer.webkitPreservesPitch = true;
+        originalPlayer.playbackRate = speedFactor;
+      } else {
+        // pitch shifted preview: tempo & pitch move together (like the final asetrate trick),
+        // real independent pitch/speed is applied precisely in the exported file below
+        originalPlayer.preservesPitch = false;
+        originalPlayer.mozPreservesPitch = false;
+        originalPlayer.webkitPreservesPitch = false;
+        originalPlayer.playbackRate = Math.min(4, Math.max(0.25, speedFactor * pitchFactor));
+      }
+    }catch(e){ /* some browsers may not support preservesPitch flags */ }
+  }
+
+
+  const pitch = document.getElementById('pitch');
+  const pitchVal = document.getElementById('pitchVal');
+  const speed = document.getElementById('speed');
+  const speedVal = document.getElementById('speedVal');
+  const vol = document.getElementById('vol');
+  const volVal = document.getElementById('volVal');
+  const format = document.getElementById('format');
+  const trimStart = document.getElementById('trimStart');
+  const trimDur = document.getElementById('trimDur');
+  const resetTrim = document.getElementById('resetTrim');
+  const presetBtns = document.querySelectorAll('.preset-btn');
+
+  const PRESETS = {
+    nightcore: { pitch: 5,  speed: 1.25, vol: 100 },
+    chipmunk:  { pitch: 8,  speed: 1.20, vol: 100 },
+    deep:      { pitch: -6, speed: 0.90, vol: 110 },
+    slowed:    { pitch: -3, speed: 0.80, vol: 100 },
+    reset:     { pitch: 0,  speed: 1,    vol: 100 }
+  };
+
+  function applyPreset(name){
+    const p = PRESETS[name];
+    if(!p) return;
+    pitch.value = p.pitch;
+    speed.value = p.speed;
+    vol.value = p.vol;
+    pitchVal.textContent = (p.pitch>0?'+':'') + p.pitch + ' st';
+    speedVal.textContent = p.speed.toFixed(2) + 'x';
+    volVal.textContent = p.vol + '%';
+    presetBtns.forEach(b=> b.classList.toggle('active', b.dataset.preset === name));
+    applyLiveRate();
+  }
+
+  presetBtns.forEach(btn=>{
+    btn.addEventListener('click', ()=> applyPreset(btn.dataset.preset));
+  });
+
+  // if user moves a slider manually, no preset should look "active" anymore
+  function clearPresetActive(){ presetBtns.forEach(b=> b.classList.remove('active')); }
+
+  pitch.addEventListener('input', ()=>{ pitchVal.textContent = (pitch.value>0?'+':'') + pitch.value + ' st'; clearPresetActive(); applyLiveRate(); });
+  speed.addEventListener('input', ()=>{ speedVal.textContent = parseFloat(speed.value).toFixed(2) + 'x'; clearPresetActive(); applyLiveRate(); });
+  vol.addEventListener('input', ()=>{ volVal.textContent = vol.value + '%'; clearPresetActive(); });
+  resetTrim.addEventListener('click', ()=>{ trimStart.value=''; trimDur.value=''; });
+
+  let currentFile = null;
+  let ffmpeg = null;
+  let ffmpegReady = false;
+
+  // ---- Button state machine: 'idle' (Proses Audio) -> 'done' (Download Audio Hasilnya)
+  let processState = 'idle';
+  let processedBlobUrl = null;
+  let processedFilename = null;
+
+  function setProcessState(state){
+    processState = state;
+    processBtn.classList.toggle('done', state === 'done');
+    btnText.textContent = state === 'done' ? 'Download Audio Hasilnya' : 'Proses Audio';
+  }
+
+  function backToIdleIfDone(){
+    if(processState === 'done'){
+      setProcessState('idle');
+      result.classList.remove('show');
+      if(processedBlobUrl){ URL.revokeObjectURL(processedBlobUrl); processedBlobUrl = null; }
+    }
+  }
+  // any control change after a successful process invalidates the downloadable result
+  [pitch, speed, vol, format].forEach(el=> el.addEventListener('input', backToIdleIfDone));
+  [trimStart, trimDur].forEach(el=> el.addEventListener('input', backToIdleIfDone));
+  presetBtns.forEach(btn=> btn.addEventListener('click', backToIdleIfDone));
+
+  function triggerBrowserDownload(url, filename){
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function showErr(msg){
+    errBox.textContent = msg;
+    errBox.classList.add('show');
+  }
+  function clearErr(){ errBox.classList.remove('show'); errBox.textContent=''; }
+
+  function loadScript(url, timeoutMs){
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = url;
+      let done = false;
+      const timer = setTimeout(()=>{
+        if(done) return;
+        done = true;
+        s.remove();
+        reject(new Error('timeout loading ' + url));
+      }, timeoutMs || 15000);
+      s.onload = ()=>{
+        if(done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      s.onerror = ()=>{
+        if(done) return;
+        done = true;
+        clearTimeout(timer);
+        s.remove();
+        reject(new Error('failed to load ' + url));
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function loadScriptWithFallback(urls){
+    let lastErr = null;
+    for(const url of urls){
+      try{
+        await loadScript(url);
+        return url;
+      }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('all sources failed');
+  }
+
+  // ffmpeg.wasm 0.12 UMD builds + @ffmpeg/util (toBlobURL/fetchFile)
+  const LIB_SOURCES = [
+    'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
+    'https://fastly.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js'
+  ];
+  const UTIL_SOURCES = [
+    'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js',
+    'https://fastly.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js'
+  ];
+  // Each entry is the base folder for that CDN's core files (js + wasm served from the same origin)
+  const CORE_BASES = [
+    'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd',
+    'https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd'
+  ];
+
+  let fetchFileFn = null;
+  let initInProgress = false;
+
+  // Fetches a CDN asset and converts it into a same-origin blob: URL.
+  // This is the key fix: loading the ffmpeg-core worker/wasm straight from a
+  // cross-origin CDN URL is what was failing (blocked by CORS/worker
+  // restrictions in some browsers/networks). Fetching it ourselves first and
+  // handing the engine a blob: URL sidesteps that entirely.
+  async function toLocalBlobURL(url, mimeType){
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status + ' fetching ' + url);
+    const buf = await resp.arrayBuffer();
+    const blob = new Blob([buf], { type: mimeType });
+    return URL.createObjectURL(blob);
+  }
+
+  async function initFFmpeg(){
+    if(initInProgress) return;
+    initInProgress = true;
+    ffmpegReady = false;
+    clearErr();
+    statusText.textContent = 'LOADING ENGINE';
+    startVU();
+
+    const log = []; // diagnostic trail shown to the user if it fails
+
+    try{
+      if(typeof FFmpegWASM === 'undefined'){
+        log.push('→ Memuat ffmpeg.js dari CDN...');
+        const usedUrl = await loadScriptWithFallback(LIB_SOURCES).catch(e=>{
+          log.push('✗ GAGAL total memuat ffmpeg.js dari SEMUA CDN (unpkg/jsdelivr/fastly). ' + (e&&e.message?e.message:e));
+          throw e;
+        });
+        log.push('✓ ffmpeg.js OK dari ' + usedUrl);
+      }
+      if(typeof FFmpegUtil === 'undefined'){
+        log.push('→ Memuat @ffmpeg/util dari CDN...');
+        const usedUrl = await loadScriptWithFallback(UTIL_SOURCES).catch(e=>{
+          log.push('✗ GAGAL total memuat @ffmpeg/util dari SEMUA CDN. ' + (e&&e.message?e.message:e));
+          throw e;
+        });
+        log.push('✓ @ffmpeg/util OK dari ' + usedUrl);
+      }
+      const { FFmpeg } = FFmpegWASM;
+      fetchFileFn = FFmpegUtil.fetchFile;
+
+      ffmpeg = new FFmpeg();
+      ffmpeg.on('log', ({ message })=>{ /* console only, keep UI clean */ console.log('[ffmpeg]', message); });
+
+      let lastErr = null;
+      let loaded = false;
+      for(const base of CORE_BASES){
+        try{
+          log.push('→ Mengunduh core dari ' + base + ' ...');
+          const coreURL = await toLocalBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript');
+          const wasmURL = await toLocalBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm');
+          await ffmpeg.load({ coreURL, wasmURL });
+          log.push('✓ Core OK dari ' + base);
+          loaded = true;
+          break;
+        }catch(e){
+          lastErr = e;
+          log.push('✗ Core dari ' + base + ' GAGAL: ' + (e && e.message ? e.message : e));
+        }
+      }
+      if(!loaded) throw lastErr || new Error('semua server core FFmpeg gagal dimuat');
+
+      ffmpegReady = true;
+      statusText.textContent = 'ENGINE READY';
+      stopVU();
+      processBtn.classList.remove('not-ready');
+    }catch(e){
+      statusText.textContent = 'ENGINE ERROR — klik utk coba lagi';
+      stopVU();
+      console.error('[REEL.DECK] FFmpeg init failed. Trail:', log, 'Final error:', e);
+      const trail = log.length ? ('\n\nRINCIAN:\n' + log.join('\n')) : '';
+      showErr(
+        'Gagal memuat engine FFmpeg. Kemungkinan penyebab: (1) domain unpkg.com / jsdelivr.net / fastly.jsdelivr.net diblokir oleh firewall, DNS, atau ISP; (2) ekstensi ad-blocker/privacy (uBlock, Brave Shield, dll) memblokir file .wasm dari CDN — banyak filter adblock men-block file besar berekstensi wasm; (3) tidak ada koneksi internet sama sekali (engine WAJIB diunduh sekali via internet, walau prosesnya lokal). Coba: nonaktifkan sementara ad-blocker untuk domain ini, coba buka salah satu URL di rincian bawah langsung di tab baru untuk lihat pesan errornya, atau coba jaringan/WiFi lain.' + trail
+      );
+    }finally{
+      initInProgress = false;
+    }
+  }
+  initFFmpeg();
+  statusPill.addEventListener('click', ()=>{ if(!ffmpegReady) initFFmpeg(); });
+
+  function fmtBytes(b){
+    if(b < 1024) return b + ' B';
+    if(b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    return (b/1024/1024).toFixed(2) + ' MB';
+  }
+
+  function handleFile(file){
+    if(!file) return;
+    clearErr();
+    currentFile = file;
+    fName.textContent = file.name;
+    fMeta.textContent = fmtBytes(file.size) + ' · ' + (file.type || 'audio');
+    deck.classList.add('show');
+    result.classList.remove('show');
+    setProcessState('idle');
+    if(processedBlobUrl){ URL.revokeObjectURL(processedBlobUrl); processedBlobUrl = null; }
+
+    if(originalUrl) URL.revokeObjectURL(originalUrl);
+    originalUrl = URL.createObjectURL(file);
+    originalPlayer.pause();
+    originalPlayer.src = originalUrl;
+    opCur.textContent = '0:00';
+    opDur.textContent = '0:00';
+    opSeek.value = 0;
+    opPlayIcon.style.display = '';
+    opPauseIcon.style.display = 'none';
+    opLive.classList.remove('active');
+    stopViz();
+
+    deck.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  dropzone.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', e=> handleFile(e.target.files[0]));
+  ['dragenter','dragover'].forEach(ev=>{
+    dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(ev=>{
+    dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.remove('drag'); });
+  });
+  dropzone.addEventListener('drop', e=>{
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    handleFile(file);
+  });
+
+  clearBtn.addEventListener('click', ()=>{
+    currentFile = null;
+    fileInput.value = '';
+    deck.classList.remove('show');
+    result.classList.remove('show');
+    setProcessState('idle');
+    if(processedBlobUrl){ URL.revokeObjectURL(processedBlobUrl); processedBlobUrl = null; }
+    if(originalUrl){ URL.revokeObjectURL(originalUrl); originalUrl = null; }
+    originalPlayer.pause();
+    originalPlayer.src = '';
+    opCur.textContent = '0:00';
+    opDur.textContent = '0:00';
+    opSeek.value = 0;
+    opPlayIcon.style.display = '';
+    opPauseIcon.style.display = 'none';
+    opLive.classList.remove('active');
+    stopViz();
+  });
+
+  processBtn.addEventListener('click', async ()=>{
+    clearErr();
+
+    if(!currentFile){
+      showErr('Pilih atau drop file audio dulu di atas, baru bisa diproses.');
+      return;
+    }
+
+    // STATE: done -> this click just downloads the already-processed file
+    if(processState === 'done' && processedBlobUrl){
+      triggerBrowserDownload(processedBlobUrl, processedFilename);
+      return;
+    }
+
+    // STATE: idle -> run ffmpeg processing
+    if(!ffmpegReady){
+      showErr('Engine FFmpeg belum siap. Tunggu status di pojok kanan atas jadi "ENGINE READY", atau kalau statusnya error, klik status itu untuk coba lagi.');
+      return;
+    }
+    result.classList.remove('show');
+    processBtn.disabled = true;
+    processBtn.classList.add('working');
+    btnText.textContent = 'Memproses...';
+    progressTrack.classList.add('show');
+    progressLabel.classList.add('show');
+    progressFill.style.width = '4%';
+    progressLabel.textContent = '4%';
+    startVU();
+
+    try{
+      const inputName = 'input_' + Date.now() + (currentFile.name.match(/\.[^.]+$/)?.[0] || '.mp3');
+      const outFmt = format.value;
+      const outName = 'output.' + outFmt;
+
+      ffmpeg.on('progress', ({ progress })=>{
+        const pct = Math.min(99, Math.max(4, Math.round((progress||0)*100)));
+        progressFill.style.width = pct + '%';
+        progressLabel.textContent = pct + '%';
+      });
+
+      await ffmpeg.writeFile(inputName, await fetchFileFn(currentFile));
+
+      const semis = parseFloat(pitch.value);
+      const pitchFactor = Math.pow(2, semis/12);
+      const speedFactor = parseFloat(speed.value);
+      const volPct = parseFloat(vol.value) / 100;
+      const sampleRate = 44100;
+
+      let filters = [];
+      if(semis !== 0){
+        filters.push(`asetrate=${Math.round(sampleRate*pitchFactor)}`);
+        filters.push(`aresample=${sampleRate}`);
+        filters.push(`atempo=${(1/pitchFactor).toFixed(6)}`);
+      }
+      if(speedFactor !== 1){
+        // atempo supports 0.5-2.0 per instance; our slider is capped 0.5-2 so single call is fine
+        filters.push(`atempo=${speedFactor.toFixed(6)}`);
+      }
+      if(volPct !== 1){
+        filters.push(`volume=${volPct.toFixed(3)}`);
+      }
+
+      const args = ['-i', inputName];
+
+      const ts = trimStart.value.trim();
+      const td = trimDur.value.trim();
+      if(ts !== ''){ args.push('-ss', ts); }
+      if(td !== ''){ args.push('-t', td); }
+
+      if(filters.length){ args.push('-af', filters.join(',')); }
+
+      if(outFmt === 'mp3'){ args.push('-codec:a','libmp3lame','-qscale:a','2'); }
+      else if(outFmt === 'ogg'){ args.push('-codec:a','libvorbis','-qscale:a','5'); }
+      // wav: default pcm, no extra flag needed
+
+      args.push(outName);
+
+      await ffmpeg.exec(args);
+
+      const data = await ffmpeg.readFile(outName);
+      const mime = outFmt === 'mp3' ? 'audio/mpeg' : outFmt === 'ogg' ? 'audio/ogg' : 'audio/wav';
+      const blob = new Blob([data.buffer], { type: mime });
+      const url = URL.createObjectURL(blob);
+
+      if(processedBlobUrl) URL.revokeObjectURL(processedBlobUrl);
+      processedBlobUrl = url;
+      processedFilename = currentFile.name.replace(/\.[^.]+$/, '') + '_processed.' + outFmt;
+
+      preview.src = url;
+      resultMeta.textContent = fmtBytes(blob.size) + ' · ' + outFmt.toUpperCase();
+      result.classList.add('show');
+      result.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+      // switch the same button into "Download Audio Hasilnya" and download right away
+      setProcessState('done');
+      triggerBrowserDownload(processedBlobUrl, processedFilename);
+
+      try{ await ffmpeg.deleteFile(inputName); await ffmpeg.deleteFile(outName); }catch(e){}
+
+    }catch(e){
+      showErr('Proses gagal: ' + (e && e.message ? e.message : e) + '. Coba file yang lebih kecil atau kurangi rentang trim.');
+    }finally{
+      processBtn.disabled = false;
+      processBtn.classList.remove('working');
+      if(processState !== 'done'){ btnText.textContent = 'Proses Audio'; }
+      progressFill.style.width = '100%';
+      progressLabel.textContent = '100%';
+      setTimeout(()=>{
+        progressTrack.classList.remove('show');
+        progressLabel.classList.remove('show');
+        progressFill.style.width = '0%';
+      }, 900);
+      stopVU();
+    }
+  });
+})();
+</script>
+</body>
+</html>
