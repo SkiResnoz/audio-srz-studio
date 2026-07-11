@@ -388,11 +388,6 @@
         </select>
       </div>
       <div class="ctrl full">
-        <div class="ctrl-label"><span>Judul / Title (metadata file)</span></div>
-        <input type="text" id="metaTitle" placeholder="mis. SRZ Studio" value="SRZ Studio">
-        <div class="op-hint" style="margin-top:8px;">Ditanam sebagai tag judul asli di file (bukan cuma nama file) &mdash; didukung untuk MP3 &amp; WAV. Belum bisa untuk OGG/WebM.</div>
-      </div>
-      <div class="ctrl full">
         <div class="ctrl-label"><span>Potong Durasi (opsional)</span><button class="reset-link" id="resetTrim">reset</button></div>
         <div class="trim-row">
           <div>
@@ -940,7 +935,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const trimStart = document.getElementById('trimStart');
   const trimDur = document.getElementById('trimDur');
   const resetTrim = document.getElementById('resetTrim');
-  const metaTitle = document.getElementById('metaTitle');
+  const BRAND_TITLE = 'SRZ Studio'; // fixed, not user-editable
   const presetBtns = document.querySelectorAll('.preset-btn');
 
   const PRESETS = {
@@ -1032,6 +1027,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const frameSize = 4096;
     const analysisHop = Math.floor(frameSize / 4);
     const synthesisHop = Math.max(1, Math.round(analysisHop / tempo));
+    // Pad so the analysis window can always reach the true end of the audio —
+    // without this the last ~90ms would silently get dropped.
+    const padded = new Float32Array(input.length + frameSize);
+    padded.set(input, 0);
     const outLen = Math.ceil(input.length / tempo) + frameSize;
     const output = new Float32Array(outLen);
     const weight = new Float32Array(outLen);
@@ -1039,15 +1038,17 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     for(let i=0;i<frameSize;i++) window[i] = 0.5 - 0.5*Math.cos((2*Math.PI*i)/(frameSize-1));
 
     let inPos = 0, outPos = 0;
-    while(inPos + frameSize <= input.length){
+    while(inPos < input.length){
       for(let i=0;i<frameSize;i++){
-        output[outPos+i] += input[inPos+i] * window[i];
+        output[outPos+i] += padded[inPos+i] * window[i];
         weight[outPos+i] += window[i];
       }
       inPos += analysisHop;
       outPos += synthesisHop;
     }
-    const finalLen = Math.max(1, outPos);
+    // Trim to the length the tempo change should actually produce, discarding
+    // any extra tail generated only because of the zero-padding above.
+    const finalLen = Math.max(1, Math.min(outPos, Math.round(input.length / tempo)));
     const result = new Float32Array(finalLen);
     for(let i=0;i<finalLen;i++){
       result[i] = weight[i] > 1e-6 ? output[i] / weight[i] : 0;
@@ -1217,9 +1218,35 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         return out;
       });
     }
+
+    // Anti-clipping safeguard: the pitch/tempo/volume steps above can push some
+    // samples slightly past full scale, which would otherwise get hard-clipped
+    // (flat-topped waveform = harsh, crackly sound) once encoded to 16-bit PCM.
+    // Scale the whole clip down just enough to stay under 0 dBFS if needed.
+    channels = normalizePeak(channels, 0.98);
+
     onProgress(95);
 
     return { channels, sampleRate: sr };
+  }
+
+  function normalizePeak(channels, ceiling){
+    let peak = 0;
+    for(const ch of channels){
+      for(let i=0;i<ch.length;i++){
+        const a = Math.abs(ch[i]);
+        if(a > peak) peak = a;
+      }
+    }
+    if(peak > ceiling && peak > 0){
+      const gain = ceiling / peak;
+      return channels.map(ch=>{
+        const out = new Float32Array(ch.length);
+        for(let i=0;i<ch.length;i++) out[i] = ch[i] * gain;
+        return out;
+      });
+    }
+    return channels;
   }
 
   // ---- MP3 encoding using the bundled pure-JS LAME encoder (no download) ----
@@ -1438,7 +1465,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       });
 
       let blob, actualExt = outFmt;
-      const titleMeta = metaTitle.value.trim();
+      const titleMeta = BRAND_TITLE;
       if(outFmt === 'mp3'){
         blob = encodeMP3(channels, sampleRate, 128, titleMeta);
         progressFill.style.width = '99%'; progressLabel.textContent = '99%';
