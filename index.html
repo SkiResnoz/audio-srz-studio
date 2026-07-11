@@ -259,6 +259,25 @@
   }
   .result-box .rt{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--phosphor); }
   .result-box .rs{ font-size:11px; color:var(--text-dim); margin-top:4px; }
+  .result-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+  button.result-btn{
+    font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px; letter-spacing:1px;
+    padding:11px 18px; border-radius:var(--radius); text-transform:uppercase; cursor:pointer;
+    border:1px solid var(--phosphor-dim); background:var(--phosphor); color:#0d1a0e;
+    display:flex; align-items:center; gap:8px; transition: box-shadow .15s ease;
+  }
+  button.result-btn:hover:not(:disabled){ box-shadow:0 0 0 1px var(--phosphor), 0 0 14px rgba(143,214,148,0.3); }
+  button.result-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  button.result-btn.roblox{ background: transparent; color: var(--amber); border-color: var(--amber-dim); }
+  button.result-btn.roblox:hover:not(:disabled){ box-shadow:0 0 0 1px var(--amber), 0 0 14px rgba(232,163,61,0.25); }
+  .roblox-status{
+    margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; line-height:1.6;
+    border:1px dashed var(--line); border-radius:var(--radius); padding:10px 14px; display:none;
+  }
+  .roblox-status.show{ display:block; }
+  .roblox-status.ok{ border-color: var(--phosphor-dim); color: var(--phosphor); }
+  .roblox-status.err{ border-color: var(--danger); color: var(--danger); }
+  .roblox-status.pending{ color: var(--text-dim); }
   a.download{
     font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px; letter-spacing:1px;
     background:var(--phosphor); color:#0d1a0e; padding:11px 20px; border-radius:var(--radius);
@@ -422,7 +441,24 @@
           <div class="rt">Selesai diproses</div>
           <div class="rs" id="resultMeta">-</div>
         </div>
+        <div class="result-actions">
+          <button class="result-btn" id="downloadResultBtn">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1 V9 M3.5 6 L7 9.5 L10.5 6" stroke="#0d1a0e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M1.5 11.5 H12.5 V13 H1.5 Z" fill="#0d1a0e"/>
+            </svg>
+            Download
+          </button>
+          <button class="result-btn roblox" id="uploadRobloxBtn">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 13 V5 M3.5 8 L7 4.5 L10.5 8" stroke="#e8a33d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M1.5 1.5 H12.5" stroke="#e8a33d" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            Upload ke Roblox
+          </button>
+        </div>
       </div>
+      <div class="roblox-status" id="robloxStatus"></div>
       <audio id="preview" controls></audio>
     </div>
   </div>
@@ -774,6 +810,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const result = document.getElementById('result');
   const resultMeta = document.getElementById('resultMeta');
   const preview = document.getElementById('preview');
+  const downloadResultBtn = document.getElementById('downloadResultBtn');
+  const uploadRobloxBtn = document.getElementById('uploadRobloxBtn');
+  const robloxStatus = document.getElementById('robloxStatus');
   const originalPlayer = document.getElementById('originalPlayer');
   const opPlay = document.getElementById('opPlay');
   const opPlayIcon = document.getElementById('opPlayIcon');
@@ -1020,6 +1059,15 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   let processState = 'idle';
   let processedBlobUrl = null;
   let processedFilename = null;
+  let processedBlob = null;
+  let processedExt = null;
+
+  // ---- Roblox upload config ----
+  // Ganti dengan URL server kamu sendiri (lihat README di paket roblox-uploader).
+  // Server ini WAJIB dijalankan sendiri karena harus menyimpan API key Roblox
+  // secara rahasia — API key tidak boleh pernah ditaruh di file ini.
+  const ROBLOX_UPLOAD_ENDPOINT = 'https://GANTI-DENGAN-URL-SERVER-KAMU.onrender.com/upload-to-roblox';
+  const ROBLOX_STATUS_ENDPOINT_BASE = 'https://GANTI-DENGAN-URL-SERVER-KAMU.onrender.com/operation-status/';
 
   function setProcessState(state){
     processState = state;
@@ -1032,6 +1080,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       setProcessState('idle');
       result.classList.remove('show');
       if(processedBlobUrl){ URL.revokeObjectURL(processedBlobUrl); processedBlobUrl = null; }
+      processedBlob = null;
+      processedExt = null;
+      robloxStatus.classList.remove('show','ok','err','pending');
     }
   }
   // any control change after a successful process invalidates the downloadable result
@@ -1532,6 +1583,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
 
       if(processedBlobUrl) URL.revokeObjectURL(processedBlobUrl);
       processedBlobUrl = url;
+      processedBlob = blob;
+      processedExt = actualExt;
       const baseName = currentFile.name.replace(/\.[^.]+$/, '');
       const safeTitle = titleMeta ? titleMeta.replace(/[\\/:*?"<>|]/g, '').trim() : '';
       processedFilename = (safeTitle ? safeTitle + ' - ' : '') + baseName + '_processed.' + actualExt;
@@ -1540,11 +1593,13 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       resultMeta.textContent = fmtBytes(blob.size) + ' · ' + actualExt.toUpperCase() +
         (outFmt === 'ogg' && actualExt !== 'ogg' ? ' (browser ini tidak punya muxer OGG asli, dipakai WebM/Opus — codec audionya sama)' : '');
       result.classList.add('show');
+      robloxStatus.classList.remove('show','ok','err','pending');
       result.scrollIntoView({behavior:'smooth', block:'nearest'});
 
-      // switch the same button into "Download Audio Hasilnya" and download right away
+      // mark as done (main button can still be clicked again as a shortcut to download),
+      // but the actual choice — Download vs Upload ke Roblox — happens via the two
+      // explicit buttons in the result box below.
       setProcessState('done');
-      triggerBrowserDownload(processedBlobUrl, processedFilename);
 
     }catch(e){
       console.error('[REEL.DECK] Processing failed:', e);
@@ -1561,6 +1616,100 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         progressFill.style.width = '0%';
       }, 900);
       stopVU();
+    }
+  });
+
+  // ---- Explicit "Download" button in the result box ----
+  downloadResultBtn.addEventListener('click', ()=>{
+    if(!processedBlobUrl || !processedFilename){
+      showErr('Belum ada hasil untuk didownload. Proses audio dulu.');
+      return;
+    }
+    triggerBrowserDownload(processedBlobUrl, processedFilename);
+  });
+
+  // ---- Explicit "Upload ke Roblox" button in the result box ----
+  function setRobloxStatus(kind, message){
+    robloxStatus.className = 'roblox-status show ' + kind;
+    robloxStatus.textContent = message;
+  }
+
+  async function pollRobloxOperation(operationPath){
+    // operationPath looks like "operations/1234567890"
+    const operationId = operationPath.split('/').pop();
+    const maxAttempts = 20;
+    for(let attempt=0; attempt<maxAttempts; attempt++){
+      await new Promise(r=> setTimeout(r, 3000));
+      try{
+        const resp = await fetch(ROBLOX_STATUS_ENDPOINT_BASE + encodeURIComponent(operationId));
+        const data = await resp.json();
+        if(!resp.ok){
+          setRobloxStatus('err', 'Gagal cek status moderasi: ' + (data.error || resp.status));
+          return;
+        }
+        if(data.done){
+          if(data.response && data.response.assetId){
+            const modState = data.response.moderationResult && data.response.moderationResult.moderationState;
+            setRobloxStatus('ok',
+              `Berhasil! Asset ID: ${data.response.assetId} — status moderasi Roblox: ${modState || 'sedang diproses Roblox'}.`
+            );
+          } else {
+            setRobloxStatus('err', 'Upload selesai tapi Roblox tidak mengembalikan asset ID. Cek dashboard kamu.');
+          }
+          return;
+        }
+        setRobloxStatus('pending', `Menunggu moderasi Roblox... (cek ke-${attempt+1})`);
+      }catch(e){
+        setRobloxStatus('err', 'Gagal menghubungi server saat cek status: ' + (e && e.message ? e.message : e));
+        return;
+      }
+    }
+    setRobloxStatus('pending', 'Masih diproses Roblox. Cek langsung di Creator Dashboard kamu nanti.');
+  }
+
+  uploadRobloxBtn.addEventListener('click', async ()=>{
+    if(!processedBlob || !processedFilename){
+      showErr('Belum ada hasil untuk diupload. Proses audio dulu.');
+      return;
+    }
+    if(ROBLOX_UPLOAD_ENDPOINT.indexOf('GANTI-DENGAN-URL-SERVER-KAMU') !== -1){
+      setRobloxStatus('err', 'Server upload belum dikonfigurasi. Isi ROBLOX_UPLOAD_ENDPOINT di kode dengan URL server kamu sendiri (lihat README roblox-uploader).');
+      return;
+    }
+    if(!['mp3','wav','ogg','flac'].includes((processedExt||'').toLowerCase())){
+      setRobloxStatus('err', `Format .${processedExt} tidak didukung Roblox. Pilih Format Output WAV atau MP3, lalu proses ulang.`);
+      return;
+    }
+
+    uploadRobloxBtn.disabled = true;
+    setRobloxStatus('pending', 'Mengupload ke Roblox...');
+
+    try{
+      const form = new FormData();
+      form.append('audio', processedBlob, processedFilename);
+      form.append('displayName', (currentFile ? currentFile.name.replace(/\.[^.]+$/, '') : 'REEL.DECK Audio').slice(0,50));
+      form.append('description', 'Diupload lewat REEL.DECK');
+
+      const resp = await fetch(ROBLOX_UPLOAD_ENDPOINT, { method:'POST', body: form });
+      const data = await resp.json().catch(()=> ({}));
+
+      if(!resp.ok || !data.ok){
+        const detail = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : '';
+        setRobloxStatus('err', 'Upload gagal: ' + (data.error || resp.status) + (detail ? ' — ' + detail : ''));
+        return;
+      }
+
+      if(data.operation){
+        setRobloxStatus('pending', 'Upload diterima Roblox, menunggu hasil moderasi...');
+        pollRobloxOperation(data.operation);
+      }else{
+        setRobloxStatus('ok', 'Upload diterima Roblox.');
+      }
+    }catch(e){
+      console.error('[REEL.DECK] Roblox upload failed:', e);
+      setRobloxStatus('err', 'Gagal menghubungi server upload: ' + (e && e.message ? e.message : e) + '. Pastikan server kamu sudah jalan dan ROBLOX_UPLOAD_ENDPOINT benar.');
+    }finally{
+      uploadRobloxBtn.disabled = false;
     }
   });
 })();
