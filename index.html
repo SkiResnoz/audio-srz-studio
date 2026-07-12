@@ -304,10 +304,10 @@
       </svg>
       <div class="brand-text">
         <div class="name">REEL<span>.</span>DECK</div>
-        <div class="tag">SRZ STUDIO</div>
+        <div class="tag">LOCAL AUDIO STUDIO</div>
       </div>
     </div>
-    <div class="status" id="statusPill" title="Diproses langsung oleh browser, tanpa download"><span class="dot"></span><span id="statusText">READY</span></div>
+    <div class="status" id="statusPill" title="Diproses langsung oleh browser, tanpa download"><span class="dot"></span><span id="statusText">READY (NO DOWNLOAD)</span></div>
   </header>
 
   <h1 class="hero">Ubah pitch &amp; speed<br><span class="accent">tanpa upload kemana-mana.</span></h1>
@@ -895,12 +895,50 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     }
   }
   let vizDragging = false;
+
+  // ---- Trim (Potong Durasi) live-preview helpers ----
+  function getTrimRange(){
+    const dur = originalPlayer.duration || Infinity;
+    const rawStart = parseFloat(trimStart.value);
+    const start = isNaN(rawStart) ? 0 : Math.max(0, Math.min(rawStart, isFinite(dur) ? dur : rawStart));
+    const rawDur = trimDur.value.trim();
+    let end = dur;
+    if(rawDur !== ''){
+      const d = parseFloat(rawDur);
+      if(!isNaN(d) && d > 0) end = Math.min(dur, start + d);
+    }
+    if(end < start) end = start;
+    return { start, end };
+  }
+  function isTrimActive(){
+    return trimStart.value.trim() !== '' || trimDur.value.trim() !== '';
+  }
+  function clampToTrim(t){
+    if(!isTrimActive()) return t;
+    const { start, end } = getTrimRange();
+    return Math.min(Math.max(t, start), end);
+  }
+  // Jump the live preview straight to the trim start (and re-clamp) the moment
+  // the person types a trim value — this is what makes "potong dari 5:00" feel instant.
+  function applyTrimPreview(){
+    if(!originalPlayer.src) return;
+    if(!originalPlayer.duration){ return; } // will be applied again once metadata loads
+    const { start } = getTrimRange();
+    originalPlayer.currentTime = start;
+    drawWaveform();
+  }
+  let trimPreviewTimer = null;
+  function scheduleTrimPreview(){
+    clearTimeout(trimPreviewTimer);
+    trimPreviewTimer = setTimeout(applyTrimPreview, 250);
+  }
+
   function seekFromEvent(e){
     if(!originalPlayer.duration) return;
     const rect = vizCanvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const ratio = Math.min(1, Math.max(0, (clientX-rect.left)/rect.width));
-    originalPlayer.currentTime = ratio * originalPlayer.duration;
+    originalPlayer.currentTime = clampToTrim(ratio * originalPlayer.duration);
     drawWaveform();
   }
   vizCanvas.style.cursor = 'pointer';
@@ -932,15 +970,30 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   });
   originalPlayer.addEventListener('loadedmetadata', ()=>{
     opDur.textContent = fmtTime(originalPlayer.duration);
-    opSeek.value = 0; applyLiveRate(); drawWaveform();
+    applyLiveRate();
+    if(isTrimActive()) applyTrimPreview(); else { opSeek.value = 0; drawWaveform(); }
   });
   originalPlayer.addEventListener('timeupdate', ()=>{
+    if(isTrimActive() && originalPlayer.duration){
+      const { start, end } = getTrimRange();
+      if(originalPlayer.currentTime < start - 0.15){
+        // seeked/started before the trim start — snap forward to it
+        originalPlayer.currentTime = start;
+      } else if(originalPlayer.currentTime >= end){
+        // reached the end of the trimmed region — stop here, exactly like the exported clip would
+        originalPlayer.pause();
+        originalPlayer.currentTime = start;
+      }
+    }
     if(originalPlayer.duration) opSeek.value = (originalPlayer.currentTime/originalPlayer.duration)*100;
     opCur.textContent = fmtTime(originalPlayer.currentTime);
     drawWaveform();
   });
   opSeek.addEventListener('input', ()=>{
-    if(originalPlayer.duration){ originalPlayer.currentTime = (opSeek.value/100)*originalPlayer.duration; drawWaveform(); }
+    if(originalPlayer.duration){
+      originalPlayer.currentTime = clampToTrim((opSeek.value/100)*originalPlayer.duration);
+      drawWaveform();
+    }
   });
 
   function applyLiveRate(){
@@ -998,9 +1051,15 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   speed.addEventListener('input', ()=>{ speedVal.textContent=parseFloat(speed.value).toFixed(2)+'x'; clearPresetActive(); applyLiveRate(); invalidateAllProcessed(); });
   vol.addEventListener('input', ()=>{ volVal.textContent=vol.value+'%'; clearPresetActive(); invalidateAllProcessed(); });
   format.addEventListener('change', invalidateAllProcessed);
-  trimStart.addEventListener('input', invalidateAllProcessed);
-  trimDur.addEventListener('input', invalidateAllProcessed);
-  resetTrim.addEventListener('click', ()=>{ trimStart.value=''; trimDur.value=''; invalidateAllProcessed(); });
+  trimStart.addEventListener('input', ()=>{ invalidateAllProcessed(); scheduleTrimPreview(); });
+  trimDur.addEventListener('input', ()=>{ invalidateAllProcessed(); scheduleTrimPreview(); });
+  resetTrim.addEventListener('click', ()=>{
+    trimStart.value=''; trimDur.value='';
+    invalidateAllProcessed();
+    clearTimeout(trimPreviewTimer);
+    // trim is now inactive — nothing left to clamp, preview plays the full track again
+    drawWaveform();
+  });
 
   // any settings change invalidates previously-processed results (since they'd no longer match current settings)
   function invalidateAllProcessed(){
