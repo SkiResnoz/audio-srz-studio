@@ -395,17 +395,14 @@
         </select>
       </div>
       <div class="ctrl full">
-        <div class="ctrl-label"><span>Potong Durasi (opsional, berlaku ke semua file)</span><button class="reset-link" id="resetTrim">reset</button></div>
+        <div class="ctrl-label"><span>Potong Audio (opsional, berlaku ke semua file)</span><button class="reset-link" id="resetTrim">reset</button></div>
         <div class="trim-row">
           <div>
-            <label>MULAI (detik)</label>
-            <input type="text" id="trimStart" placeholder="0">
-          </div>
-          <div>
-            <label>DURASI (detik, kosongkan = sampai akhir)</label>
-            <input type="text" id="trimDur" placeholder="">
+            <label>SIMPAN SAMPAI MENIT KE- (kosongkan = tidak dipotong, pakai lagu penuh)</label>
+            <input type="text" id="cutAtMin" placeholder="mis. 5 atau 5.5">
           </div>
         </div>
+        <div class="op-hint" style="margin-top:8px;">Semua bagian setelah menit ini otomatis dihapus/dipotong dari hasil.</div>
       </div>
     </div>
 
@@ -897,34 +894,30 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   let vizDragging = false;
 
   // ---- Trim (Potong Durasi) live-preview helpers ----
-  function getTrimRange(){
+  // ---- Potong Audio (simple): keep 0:00 up to a chosen minute, cut everything after it ----
+  function getTrimEnd(){
     const dur = originalPlayer.duration || Infinity;
-    const rawStart = parseFloat(trimStart.value);
-    const start = isNaN(rawStart) ? 0 : Math.max(0, Math.min(rawStart, isFinite(dur) ? dur : rawStart));
-    const rawDur = trimDur.value.trim();
-    let end = dur;
-    if(rawDur !== ''){
-      const d = parseFloat(rawDur);
-      if(!isNaN(d) && d > 0) end = Math.min(dur, start + d);
-    }
-    if(end < start) end = start;
-    return { start, end };
+    const raw = cutAtMin.value.trim();
+    if(raw === '') return dur;
+    const minutes = parseFloat(raw);
+    if(isNaN(minutes) || minutes <= 0) return dur;
+    return Math.min(dur, minutes * 60);
   }
   function isTrimActive(){
-    return trimStart.value.trim() !== '' || trimDur.value.trim() !== '';
+    return cutAtMin.value.trim() !== '';
   }
   function clampToTrim(t){
-    if(!isTrimActive()) return t;
-    const { start, end } = getTrimRange();
-    return Math.min(Math.max(t, start), end);
+    if(!isTrimActive()) return Math.max(0, t);
+    return Math.min(Math.max(0, t), getTrimEnd());
   }
-  // Jump the live preview straight to the trim start (and re-clamp) the moment
-  // the person types a trim value — this is what makes "potong dari 5:00" feel instant.
+  // The moment the person types a cutoff minute, hop the preview to just before that
+  // point so they can hear, live, exactly where the audio gets cut off.
   function applyTrimPreview(){
-    if(!originalPlayer.src) return;
-    if(!originalPlayer.duration){ return; } // will be applied again once metadata loads
-    const { start } = getTrimRange();
-    originalPlayer.currentTime = start;
+    if(!originalPlayer.src || !originalPlayer.duration) return;
+    if(!isTrimActive()) return; // reset: leave playback alone, nothing is cut anymore
+    const end = getTrimEnd();
+    originalPlayer.currentTime = Math.max(0, Math.min(end, Math.max(0, end - 4)));
+    if(originalPlayer.paused) originalPlayer.play().catch(()=>{});
     drawWaveform();
   }
   let trimPreviewTimer = null;
@@ -975,14 +968,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   });
   originalPlayer.addEventListener('timeupdate', ()=>{
     if(isTrimActive() && originalPlayer.duration){
-      const { start, end } = getTrimRange();
-      if(originalPlayer.currentTime < start - 0.15){
-        // seeked/started before the trim start — snap forward to it
-        originalPlayer.currentTime = start;
-      } else if(originalPlayer.currentTime >= end){
-        // reached the end of the trimmed region — stop here, exactly like the exported clip would
+      const end = getTrimEnd();
+      if(originalPlayer.currentTime >= end){
+        // reached the cut point — freeze here, exactly like the exported clip would (everything after is gone)
         originalPlayer.pause();
-        originalPlayer.currentTime = start;
+        originalPlayer.currentTime = end;
       }
     }
     if(originalPlayer.duration) opSeek.value = (originalPlayer.currentTime/originalPlayer.duration)*100;
@@ -1023,8 +1013,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const vol = document.getElementById('vol');
   const volVal = document.getElementById('volVal');
   const format = document.getElementById('format');
-  const trimStart = document.getElementById('trimStart');
-  const trimDur = document.getElementById('trimDur');
+  const cutAtMin = document.getElementById('cutAtMin');
   const resetTrim = document.getElementById('resetTrim');
   const presetBtns = document.querySelectorAll('.preset-btn');
 
@@ -1051,10 +1040,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   speed.addEventListener('input', ()=>{ speedVal.textContent=parseFloat(speed.value).toFixed(2)+'x'; clearPresetActive(); applyLiveRate(); invalidateAllProcessed(); });
   vol.addEventListener('input', ()=>{ volVal.textContent=vol.value+'%'; clearPresetActive(); invalidateAllProcessed(); });
   format.addEventListener('change', invalidateAllProcessed);
-  trimStart.addEventListener('input', ()=>{ invalidateAllProcessed(); scheduleTrimPreview(); });
-  trimDur.addEventListener('input', ()=>{ invalidateAllProcessed(); scheduleTrimPreview(); });
+  cutAtMin.addEventListener('input', ()=>{ invalidateAllProcessed(); scheduleTrimPreview(); });
   resetTrim.addEventListener('click', ()=>{
-    trimStart.value=''; trimDur.value='';
+    cutAtMin.value='';
     invalidateAllProcessed();
     clearTimeout(trimPreviewTimer);
     // trim is now inactive — nothing left to clamp, preview plays the full track again
@@ -1304,13 +1292,14 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   // ================= END SHARED PROCESSING PIPELINE =================
 
   function currentOpts(){
-    const ts = trimStart.value.trim(), td = trimDur.value.trim();
+    const cm = cutAtMin.value.trim();
+    const cutSeconds = cm !== '' ? parseFloat(cm) * 60 : null;
     return {
       semis: parseFloat(pitch.value),
       speedFactor: parseFloat(speed.value),
       volPct: parseFloat(vol.value)/100,
-      trimStart: ts!=='' ? parseFloat(ts) : 0,
-      trimDur: td!=='' ? parseFloat(td) : null,
+      trimStart: 0,
+      trimDur: (cutSeconds != null && !isNaN(cutSeconds) && cutSeconds > 0) ? cutSeconds : null,
       outFmt: format.value
     };
   }
